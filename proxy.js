@@ -879,6 +879,9 @@ function Miner(id, params, ip, pushMessage, portData, minerSocket) {
     this.coin = portData.coin;
     this.coinFuncs = require(`./lib/${this.coin}.js`)();
     this.coinSettings = global.config.coinSettings[this.coin];
+	if (!this.coinSettings.minDiff) this.coinSettings.minDiff = 100;
+	if (!this.coinSettings.maxDiff) this.coinSettings.maxDiff = 800000;
+	if (!this.coinSettings.shareTargetTime) this.coinSettings.shareTargetTime = 15;
     this.login = params.login;  // Documentation purposes only.
     this.user = params.login;  // For accessControl and workerStats.
     this.password = params.pass;  // For accessControl and workerStats.
