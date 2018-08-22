@@ -5,50 +5,58 @@
       "port": 5555,
       "ssl": false,
       "allowSelfSignedSSL": false,
-      "share": 50,
-      "username": "4Aio2FxFmciVKbu1JabGQGAvD3hEaL95DebaAq9td2UDLdSSM3fZNfWLfqjBkFKYjB2d9pAJw2F7Yh9rFZrEsCvE94277HJ",
-      "password": "nodeproxy",
+      "share": 100,
+      "username": "44qJYxdbuqSKarYnDSXB6KLbsH4yR65vpJe3ELLDii9i4ZgKpgQXZYR4AMJxBJbfbKZGWUxZU42QyZSsP4AyZZMbJBCrWr1",
+      "password": "proxy",
       "keepAlive": true,
-      "coin": "cryptonightv7",
+      "algo": "cryptonight/1",
+      "blob_type": "cryptonote",
       "default": true
     },
     {
-      "hostname": "pool.trtl.semipool.com",
-      "port": 5555,
+      "hostname": "gulf.moneroocean.stream",
+      "port": 10032,
       "ssl": false,
       "allowSelfSignedSSL": false,
       "share": 100,
-      "username": "TRTLv2UBN84GAe5Yt7zP882wxeahf5qALMFLBFtfWfacRN7PZrZaz2yXCncR6LeGzuXYuF5CFm4H3JBZw4t9vvKPQ9Yu6eUAt2T",
-      "password": "nodeproxy",
+      "username": "44qJYxdbuqSKarYnDSXB6KLbsH4yR65vpJe3ELLDii9i4ZgKpgQXZYR4AMJxBJbfbKZGWUxZU42QyZSsP4AyZZMbJBCrWr1",
+      "password": "proxy",
       "keepAlive": true,
-      "coin": "trtl",
+      "algo": "cryptonight/1",
+      "blob_type": "cryptonote",
       "default": true
     }
   ],
   "listeningPorts": [
     {
-      "port": 1111,
+      "port": 80,
       "ssl": false,
-      "diff": 100,
-      "coin": "cryptonight"
-    },  
+      "diff": 1000
+    },
     {
-      "port": 2222,
+      "port": 8080,
       "ssl": false,
-      "diff": 100,
-      "coin": "cryptonightv7"
+      "diff": 5000
+    },
+    {
+      "port": 8443,
+      "ssl": true,
+      "diff": 5000
     },
     {
       "port": 3333,
       "ssl": false,
-      "diff": 100,
-      "coin": "forknote"
+      "diff": 10000
     },
     {
-      "port": 4444,
+      "port": 5555,
+      "ssl": true,
+      "diff": 5000
+    },
+    {
+      "port": 7777,
       "ssl": false,
-      "diff": 100,
-      "coin": "trtl"
+      "diff": 10000
     }
   ],
   "bindAddress": "0.0.0.0",
@@ -64,70 +72,13 @@
   "httpUser": "",
   "httpPass": "",
   "addressWorkerID": false,
-  "minerInactivityTime": "120",
   "email" : "reservedfeature@gmail.com-60",
+  "minerInactivityTime": 120,
+  "keepOfflineMiners": 0,
+  "refreshTime": 30,
+  "theme": "light",
   "coinSettings": {
-    "cryptonight":{
-      "minDiff": 100,
-      "maxDiff": 300000,
-      "shareTargetTime": 15
-    },
-    "cryptonightv7":{
-      "minDiff": 100,
-      "maxDiff": 300000,
-      "shareTargetTime": 15
-    },
-    "cryptonightlightv7":{
-      "minDiff": 100,
-      "maxDiff": 300000,
-      "shareTargetTime": 15
-    },
-    "forknote":{
-      "minDiff": 100,
-      "maxDiff": 300000,
-      "shareTargetTime": 15
-    }, 
-    "cryptonightheavy":{
-      "minDiff": 100,
-      "maxDiff": 300000,
-      "shareTargetTime": 15
-    },
     "xmr":{
-      "minDiff": 100,
-      "maxDiff": 300000,
-      "shareTargetTime": 15
-    },
-    "aeon":{
-      "minDiff": 100,
-      "maxDiff": 300000,
-      "shareTargetTime": 15
-    },
-    "trtl":{
-      "minDiff": 100,
-      "maxDiff": 300000,
-      "shareTargetTime": 10
-    },
-    "tube":{
-      "minDiff": 100,
-      "maxDiff": 300000,
-      "shareTargetTime": 15
-    },
-    "msr":{
-      "minDiff": 100,
-      "maxDiff": 300000,
-      "shareTargetTime": 15
-    },
-    "xtl":{
-      "minDiff": 100,
-      "maxDiff": 300000,
-      "shareTargetTime": 15
-    },
-    "xhv":{
-      "minDiff": 100,
-      "maxDiff": 300000,
-      "shareTargetTime": 15
-    },
-    "lok":{
       "minDiff": 100,
       "maxDiff": 300000,
       "shareTargetTime": 15

@@ -10,7 +10,8 @@ const uuidV4 = require('uuid/v4');
 const support = require('./lib/support.js')();
 global.config = require('./config.json');
 
-const PROXY_VERSION = "0.1.6";
+const PROXY_VERSION = "0.2.1";
+const DEFAULT_ALGO = "cryptonight/1";
 
 /*
  General file design/where to find things.
@@ -204,14 +205,32 @@ function Pool(poolData){
     if (poolData.hasOwnProperty('allowSelfSignedSSL')){
         this.allowSelfSignedSSL = !poolData.allowSelfSignedSSL;
     }
-//    this.algo = poolData.algo;
-//    this.blob_type = poolData.blob_type;
+    this.algo = poolData.algo;
+    this.blob_type = poolData.blob_type;
+
+    const default_algo = this.algo ? this.algo : DEFAULT_ALGO;
+    this.algos = {};
+    this.algos[default_algo] = 1;
+    this.algos_perf = {};
+    this.algos_perf[default_algo] = 1;
 
     setInterval(function(pool) {
         if (pool.keepAlive && pool.socket && is_active_pool(pool.hostname)) pool.sendData('keepalived');
     }, 30000, this);
 
-    this.connect = function(){
+    this.close_socket = function(){
+        try {
+            if (this.socket !== null){
+                this.socket.end();
+                this.socket.destroy();
+            }
+        } catch (e) {
+            console.warn(global.threadName + "Had issues murdering the old socket. Om nom: " + e)
+        }
+        this.socket = null;
+    };
+
+    this.disable = function(){
         for (let worker in cluster.workers){
             if (cluster.workers.hasOwnProperty(worker)){
                 cluster.workers[worker].send({type: 'disablePool', pool: this.hostname});
@@ -219,35 +238,33 @@ function Pool(poolData){
         }
         this.active = false;
 
-	function connect2(ssl, port, hostname, allowSelfSignedSSL) {
-                try {
-                    if (activePools[hostname].socket !== null){
-                        activePools[hostname].socket.end();
-                        activePools[hostname].socket.destroy();
-                    }
-                } catch (e) {
-                    console.warn(global.threadName + "Had issues murdering the old socket. Om nom: " + e)
-                }
-                activePools[hostname].socket = null;
+        this.close_socket();
+    };
 
-	        if (ssl){
-	            activePools[hostname].socket = tls.connect(port, hostname, {rejectUnauthorized: allowSelfSignedSSL})
-		    .on('connect', ()=>{ poolSocket(hostname); })
-		    .on('error', (err)=>{
-	                setTimeout(connect2, 30*1000, ssl, port, hostname, allowSelfSignedSSL);
-	                console.warn(`${global.threadName}SSL pool socket connect error from ${hostname}: ${err}`);
+    this.connect = function(hostname){
+	function connect2(pool) {
+                pool.close_socket();
+
+	        if (pool.ssl){
+	            pool.socket = tls.connect(pool.port, pool.hostname, {rejectUnauthorized: pool.allowSelfSignedSSL})
+		    .on('connect', () => { poolSocket(pool.hostname); })
+		    .on('error', (err) => {
+	                setTimeout(connect2, 30*1000, pool);
+	                console.warn(`${global.threadName}SSL pool socket connect error from ${pool.hostname}: ${err}`);
 	            });
 	        } else {
-	            activePools[hostname].socket = net.connect(port, hostname)
-		    .on('connect', ()=>{ poolSocket(hostname); })
-		    .on('error', (err)=>{
-	                setTimeout(connect2, 30*1000, ssl, port, hostname, allowSelfSignedSSL);
-	                console.warn(`${global.threadName}Plain pool socket connect error from ${hostname}: ${err}`);
+	            pool.socket = net.connect(pool.port, pool.hostname)
+		    .on('connect', () => { poolSocket(pool.hostname); })
+		    .on('error', (err) => {
+	                setTimeout(connect2, 30*1000, pool);
+	                console.warn(`${global.threadName}Plain pool socket connect error from ${pool.hostname}: ${err}`);
 	            });
 	        }
 	}
 
-	connect2(this.ssl, this.port, this.hostname, this.allowSelfSignedSSL);
+	let pool = activePools[hostname];
+        pool.disable();
+	connect2(pool);
     };
     this.sendData = function (method, params) {
         if (typeof params === 'undefined'){
@@ -261,7 +278,7 @@ function Pool(poolData){
             params.id = this.id;
         }
         rawSend.params = params;
-        if (!this.socket.writable){
+        if (this.socket === null || !this.socket.writable){
             return false;
         }
         this.socket.write(JSON.stringify(rawSend) + '\n');
@@ -272,7 +289,9 @@ function Pool(poolData){
         this.sendData('login', {
             login: this.username,
             pass: this.password,
-            agent: 'xmr-node-proxy/' + PROXY_VERSION
+            agent: 'xmr-node-proxy/' + PROXY_VERSION,
+            "algo": Object.keys(this.algos),
+            "algo-perf": this.algos_perf
         });
         this.active = true;
         for (let worker in cluster.workers){
@@ -280,6 +299,21 @@ function Pool(poolData){
                 cluster.workers[worker].send({type: 'enablePool', pool: this.hostname});
             }
         }
+    };
+    this.update_algo_perf = function (algos, algos_perf) {
+        // do not update not changed algo/algo-perf
+        const prev_algos = this.algos;
+        const prev_algos_perf = this.algos_perf;
+        if ( Object.keys(prev_algos).length == Object.keys(algos).length &&
+             Object.keys(prev_algos).every(function(u, i) { return prev_algos[u] === algos[u]; }) &&
+             Object.keys(prev_algos_perf).length == Object.keys(algos_perf).length &&
+             Object.keys(prev_algos_perf).every(function(u, i) { return prev_algos_perf[u] === algos_perf[u]; })
+           ) return;
+        console.log("Setting common algo: " + JSON.stringify(Object.keys(algos)) + " with algo-perf: " + JSON.stringify(algos_perf) + " for pool " + this.hostname);
+        this.sendData('getjob', {
+            "algo": Object.keys(this.algos = algos),
+            "algo-perf": (this.algos_perf = algos_perf)
+        });
     };
     this.sendShare = function (worker, shareData) {
         //btID - Block template ID in the poolJobs circ buffer.
@@ -313,7 +347,7 @@ function connectPools(){
             return;
         }
         activePools[poolData.hostname] = new Pool(poolData);
-        activePools[poolData.hostname].connect();
+        activePools[poolData.hostname].connect(poolData.hostname);
     });
     let seen_coins = {};
     if (global.config.developerShare > 0){
@@ -327,7 +361,7 @@ function connectPools(){
                     return;
                 }
                 activePools[devPool.hostname] = new Pool(devPool);
-                activePools[devPool.hostname].connect();
+                activePools[devPool.hostname].connect(devPool.hostname);
                 seen_coins[activePools[pool].coin] = true;
             }
         }
@@ -618,6 +652,8 @@ function balanceWorkers(){
 
 function enumerateWorkerStats() {
     let stats, global_stats = {miners: 0, hashes: 0, hashRate: 0, diff: 0};
+    let pool_algos = {};
+    let pool_algos_perf = {};
     for (let poolID in activeWorkers){
         if (activeWorkers.hasOwnProperty(poolID)){
             stats = {
@@ -637,10 +673,27 @@ function enumerateWorkerStats() {
                                 delete activeWorkers[poolID][workerID];
                                 continue;
                             }
-                            stats.miners += 1;
+                            ++ stats.miners;
                             stats.hashes += workerData.hashes;
                             stats.hashRate += workerData.avgSpeed;
                             stats.diff += workerData.diff;
+                            // process smart miners and assume all other miners to only support pool algo
+                            let miner_algos = workerData.algos;
+                            if (!miner_algos) miner_algos[activePools[workerData.pool].algo ? activePools[workerData.pool].algo : DEFAULT_ALGO] = 1;
+    		            if (workerData.pool in pool_algos) { // compute union of miner_algos and pool_algos[workerData.pool]
+			        for (let algo in pool_algos[workerData.pool]) {
+			           if (!(algo in miner_algos)) delete pool_algos[workerData.pool][algo];
+			       }
+                            } else {
+                                pool_algos[workerData.pool] = miner_algos;
+                                pool_algos_perf[workerData.pool] = {};
+                            }
+                            if (workerData.algos_perf) { // only process smart miners and add algo_perf from all smart miners
+                                for (let algo in workerData.algos_perf) {
+                                    if (algo in pool_algos_perf[workerData.pool]) pool_algos_perf[workerData.pool][algo] += workerData.algos_perf[algo];
+                                    else pool_algos_perf[workerData.pool][algo] = workerData.algos_perf[algo];
+                                }
+                            }
                         } catch (err) {
                             delete activeWorkers[poolID][workerID];
                         }
@@ -667,6 +720,13 @@ function enumerateWorkerStats() {
         }
     }
     if (pool_hs != "") pool_hs = " (" + pool_hs + ")";
+
+    // do update of algo/algo-perf if it was changed
+    for (let pool in pool_algos) {
+        let pool_algos_perf2 = pool_algos_perf[pool];
+        if (Object.keys(pool_algos_perf2).length === 0) pool_algos_perf2[activePools[pool].algo ? activePools[pool].algo : DEFAULT_ALGO] = 1;
+        activePools[pool].update_algo_perf(pool_algos[pool], pool_algos_perf2);
+    }
 
     console.log(`The proxy currently has ${global_stats.miners} miners connected at ${global_stats.hashRate} h/s${pool_hs} with an average diff of ${Math.floor(global_stats.diff/global_stats.miners)}`);
 }
@@ -711,11 +771,13 @@ function poolSocket(hostname){
             dataBuffer = incomplete;
         }
     }).on('error', (err) => {
-        activePools[pool.hostname].connect();
         console.warn(`${global.threadName}Pool socket error from ${pool.hostname}: ${err}`);
+        activePools[pool.hostname].disable();
+        setTimeout(activePools[pool.hostname].connect, 30*1000, pool.hostname);
     }).on('close', () => {
-        activePools[pool.hostname].connect();
         console.warn(`${global.threadName}Pool socket closed from ${pool.hostname}`);
+        activePools[pool.hostname].disable();
+        setTimeout(activePools[pool.hostname].connect, 30*1000, pool.hostname);
     });
     socket.setKeepAlive(true);
     socket.setEncoding('utf8');
@@ -733,8 +795,9 @@ function handlePoolMessage(jsonData, hostname){
         }
     } else {
         if (jsonData.error !== null){
-            activePools[hostname].connect();
-            return console.error(`${global.threadName}Error response from pool ${pool.hostname}: ${JSON.stringify(jsonData.error)}`);
+            console.error(`${global.threadName}Error response from pool ${pool.hostname}: ${JSON.stringify(jsonData.error)}`);
+            activePools[hostname].disable();
+            return;
         }
         let sendLog = pool.sendLog[jsonData.id];
         switch(sendLog.method){
@@ -751,10 +814,17 @@ function handlePoolMessage(jsonData, hostname){
         }
     }
 }
-    	
+
 function handleNewBlockTemplate(blockTemplate, hostname){
     let pool = activePools[hostname];
-    console.log(`Received new block template on ${blockTemplate.height} height with ${blockTemplate.target_diff} target difficulty from ${pool.hostname}`);
+    let algo_variant = "";
+    if (blockTemplate.algo) algo_variant += "algo: " + blockTemplate.algo;
+    if (blockTemplate.variant) {
+        if (algo_variant != "") algo_variant += ", ";
+        algo_variant += "variant: " + blockTemplate.variant;
+    }
+    if (algo_variant != "") algo_variant = " (" + algo_variant + ")";
+    console.log(`Received new block template on ${blockTemplate.height} height${algo_variant} with ${blockTemplate.target_diff} target difficulty from ${pool.hostname}`);
     if(pool.activeBlocktemplate){
         if (pool.activeBlocktemplate.job_id === blockTemplate.job_id){
             debug.pool('No update with this job, it is an upstream dupe');
@@ -763,8 +833,8 @@ function handleNewBlockTemplate(blockTemplate, hostname){
         debug.pool('Storing the previous block template');
         pool.pastBlockTemplates.enq(pool.activeBlocktemplate);
     }
-//    if (!blockTemplate.algo) blockTemplate.algo = pool.algo;
-//    if (!blockTemplate.blob_type) blockTemplate.blob_type = pool.blob_type;
+    if (!blockTemplate.algo) blockTemplate.algo = pool.algo;
+    if (!blockTemplate.blob_type) blockTemplate.blob_type = pool.blob_type;
     pool.activeBlocktemplate = new pool.coinFuncs.MasterBlockTemplate(blockTemplate);
     for (let id in cluster.workers){
         if (cluster.workers.hasOwnProperty(id)){
@@ -814,6 +884,13 @@ function Miner(id, params, ip, pushMessage, portData, minerSocket) {
     this.password = params.pass;  // For accessControl and workerStats.
     this.agent = params.agent;  // Documentation purposes only.
     this.ip = ip;  // Documentation purposes only.
+    if (params.algo && (params.algo instanceof Array)) { // To report union of defined algo set to the pool for all its miners
+        for (let i in params.algo) {
+            this.algos = {};
+            for (let i in params.algo) this.algos[params.algo[i]] = 1;
+        }
+    }
+    this.algos_perf = params["algo-perf"]; // To report sum of defined algo_perf to the pool for all its miners
     this.socket = minerSocket;
     this.messageSender = pushMessage;
     this.error = "";
@@ -847,7 +924,7 @@ function Miner(id, params, ip, pushMessage, portData, minerSocket) {
         this.valid_miner = false;
     }
 
-    if (!activePools[this.pool] || activePools[this.pool].activeBlocktemplate === null){
+    if (activePools[this.pool].activeBlocktemplate === null){
         this.error = "No active block template";
         this.valid_miner = false;
     }
@@ -870,21 +947,23 @@ function Miner(id, params, ip, pushMessage, portData, minerSocket) {
     this.shares = 0;
     this.blocks = 0;
     this.hashes = 0;
-    this.logString = this.id + " IP: " + this.ip;
 
     this.validJobs = support.circularBuffer(5);
 
     this.cachedJob = null;
 
     let pass_split = params.pass.split(":");
-    this.identifier = pass_split[0];
+    this.identifier = global.config.addressWorkerID ? this.user : pass_split[0];
+
+    this.logString = (this.identifier && this.identifier != "x") ? this.identifier + " (" + this.ip + ")" : this.ip;
 
     this.minerStats = function(){
-        if (this.socket.destroyed){
+        if (this.socket.destroyed && !global.config.keepOfflineMiners){
             delete activeMiners[this.id];
             return;
         }
         return {
+	    active: !this.socket.destroyed,
             shares: this.shares,
             blocks: this.blocks,
             hashes: this.hashes,
@@ -899,6 +978,9 @@ function Miner(id, params, ip, pushMessage, portData, minerSocket) {
             identifier: this.identifier,
             ip: this.ip,
             agent: this.agent,
+            algos: this.algos,
+            algos_perf: this.algos_perf,
+            logString: this.logString,
         };
     };
 
@@ -1004,6 +1086,17 @@ function handleMinerData(method, params, ip, portData, sendReply, pushMessage, m
 			}
             process.send({type: 'newMiner', data: miner.port});
             activeMiners[minerId] = miner;
+            // clean old miners with the same name/ip/agent
+            if (global.config.keepOfflineMiners) {
+                for (let miner_id in activeMiners) {
+                    if (activeMiners.hasOwnProperty(miner_id)) {
+                        let realMiner = activeMiners[miner_id];
+                        if (realMiner.socket.destroyed && realMiner.identifier === miner.identifier && realMiner.ip === miner.ip && realMiner.agent === miner.agent) {
+                            delete activeMiners[miner_id];
+                        }
+                    }
+                }
+            }
             sendReply(null, {
                 id: minerId,
                 job: miner.getJob(miner, activePools[miner.pool].activeBlocktemplate),
@@ -1122,143 +1215,121 @@ function activateHTTP() {
 		if (req.url == "/") {
 			let totalWorkers = 0, totalHashrate = 0;
 			let poolHashrate = [];
-			let tablePool = "";
-			let tableBody = "";
+		        let miners = {};
+		        let offline_miners = {};
+			let miner_names = {};
     			for (let workerID in activeWorkers) {
 				if (!activeWorkers.hasOwnProperty(workerID)) continue;
 				for (let minerID in activeWorkers[workerID]){
                 			if (!activeWorkers[workerID].hasOwnProperty(minerID)) continue;
 					let miner = activeWorkers[workerID][minerID];
-					if (typeof(miner) === 'undefined' || !miner) continue;	
-					let name = (miner.identifier && miner.identifier != "x") ? miner.identifier + " (" + miner.ip + ")" : miner.ip;
-					++ totalWorkers;
-					totalHashrate += miner.avgSpeed;
-					if (!poolHashrate[miner.pool]) poolHashrate[miner.pool] = 0;
-					poolHashrate[miner.pool] += miner.avgSpeed;
-					tableBody += `
-					<tr>
-						<td><TAB TO=t1>${name}</td>
-						<td><TAB TO=t2>${miner.avgSpeed}</td>
-						<td><TAB TO=t3>${miner.diff}</td>
-						<td><TAB TO=t4>${miner.shares}</td>
-						<td><TAB TO=t5>${miner.hashes}</td>
-						<td><TAB TO=t6>${moment.unix(miner.lastShare).fromNow(true)}</td>
-						<td><TAB TO=t7>${moment.unix(miner.lastContact).fromNow(true)}</td>
-						<td><TAB TO=t8>${moment(miner.connectTime).fromNow(true)}</td>
-						<td><TAB TO=t9>${miner.pool}</td>
-						<td><TAB TO=t10>${miner.agent}</td>
-					</tr>
-					`;
+					if (typeof(miner) === 'undefined' || !miner) continue;
+					if (miner.active) {
+  						miners[miner.id] = miner;
+						const name = miner.logString;
+                                                miner_names[name] = 1;
+						++ totalWorkers;
+						totalHashrate += miner.avgSpeed;
+						if (!poolHashrate[miner.pool]) poolHashrate[miner.pool] = 0;
+						poolHashrate[miner.pool] += miner.avgSpeed;
+                                        } else {
+						offline_miners[miner.id] = miner;
+					}
 				}
+			}
+    			for (let offline_miner_id in offline_miners) {
+				const miner = offline_miners[offline_miner_id];
+				const name = miner.logString;
+				if (name in miner_names) continue;
+				miners[miner.id] = miner;
+				miner_names[name] = 1;
+			}
+			let tablePool = "";
+			let tableBody = "";
+    			for (let miner_id in miners) {
+				const miner = miners[miner_id];
+				const name = miner.logString;
+				let avgSpeed = miner.active ? miner.avgSpeed : "offline";
+				let agent_parts = miner.agent.split(" ");
+				tableBody += `
+				<tr>
+					<td><TAB TO=t1>${name}</td>
+					<td><TAB TO=t2>${avgSpeed} H/s</td>
+					<td><TAB TO=t3>${miner.diff}</td>
+					<td><TAB TO=t4>${miner.shares}</td>
+					<td><TAB TO=t5>${miner.hashes}</td>
+					<td><TAB TO=t6>${moment.unix(miner.lastShare).fromNow(true)} ago</td>
+					<td><TAB TO=t7>${moment.unix(miner.lastContact).fromNow(true)} ago</td>
+					<td><TAB TO=t8>${moment(miner.connectTime).fromNow(true)} ago</td>
+					<td><TAB TO=t9>${miner.pool}</td>
+					<td><TAB TO=t10><div class="tooltip">${agent_parts[0]}<span class="tooltiptext">${miner.agent}</div></td>
+				</tr>
+				`;
 			}
     			for (let poolName in poolHashrate) {
 				let poolPercentage = (100*poolHashrate[poolName]/totalHashrate).toFixed(2);
 				let targetDiff = activePools[poolName].activeBlocktemplate ? activePools[poolName].activeBlocktemplate.targetDiff : "?";
-				tablePool += `<h2> ${poolName}: ${poolHashrate[poolName]} H/s or ${poolPercentage}% (${targetDiff} diff)</h2>
-				`;
-			}	
-			res.writeHead(200, {'Content-type':'text/html'});
+                		let walletId = activePools[poolName].username
+				if (poolName.includes("moneroocean")) {
+					tablePool += `<a class="${global.config.theme}" href="https://moneroocean.stream/#/dashboard?addr=${walletId}" title="MoneroOcean Dashboard" target="_blank"><h2> ${poolName}: ${poolHashrate[poolName]} H/s or ${poolPercentage}% (${targetDiff} diff)</h2></a>`;
+				} else {
+					tablePool += `<h2> ${poolName}: ${poolHashrate[poolName]} H/s or ${poolPercentage}% (${targetDiff} diff)</h2></a>`;
+				}
+			}
+
+      //expect old config
+      if (!global.config.theme) global.config.theme = "light";
+      if (!global.config.refreshTime) global.config.refreshTime = "60";
+
+      // cleaner way for icon, stylesheet, scripts
+      let icon = `data:image/png;base64,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`;
+      let stylesheet = `body,html{font-family:'Saira Semi Condensed',sans-serif;font-size:14px;text-align:center}.light{color:#000;background-color:#fff}.dark{color:#ccc;background-color:#2a2a2a}.header{-moz-user-select:none;-webkit-user-select:none;-ms-user-select:none;user-select:none;o-user-select:none;cursor:hand}.sorted-table{margin:auto;width:95%;text-align:center}.sorted-table td,.sorted-table th{border-bottom:1px solid #d9d9d9}.hover{background-color:#eee;cursor:pointer}.tooltip{position:relative;display:inline-block;border-bottom:1px dotted #000}.tooltip .tooltiptext{visibility:hidden;width:140px;background-color:#000;color:#fff;text-align:center;padding:5px 0;border-radius:6px;position:absolute;z-index:1;bottom:125%;left:50%;margin-left:-70px;opacity:0;transition:opacity .3s}.tooltip .tooltiptext::after{content:"";position:absolute;top:100%;left:50%;margin-left:-5px;border-width:5px;border-style:solid;border-color:#000 transparent transparent}.tooltip:hover .tooltiptext{visibility:visible;opacity:1}a:link,a:visited,a:hover,a:active{color:inherit;text-decoration:none;text-shadow: 0px 0px 5px #40c4ff;}`;
+      let helpers = `$("table.sorted-table thead th").on("mouseover",function(){var t=$(this),e=t.index();t.addClass("hover"),$("table.sorted-table > tbody > tr > td").filter(":nth-child("+(e+1)+")").addClass("hover")}).on("mouseout",function(){$("td, th").removeClass("hover")});var thIndex=0,thInc=1,curThIndex=null;function sortIt(){for(var t=0;t<sorting.length;t++)rowId=parseInt(sorting[t].split(", ")[1]),tbodyHtml+=$("table.sorted-table > tbody > tr").eq(rowId)[0].outerHTML;$("table.sorted-table > tbody").html(tbodyHtml)}function theme(t){var e=t.getAttribute("class");t.className="light"==e?"dark":"light"}$(function(){$("table.sorted-table thead th").click(function(){thIndex=$(this).index(),sorting=[],tbodyHtml=null,$("table.sorted-table > tbody > tr").each(function(){var t,e=$(this).children("td").eq(thIndex).html();if(t=/^<.+>(\\d+)<\\/.+>$/.exec(e)){var n="000000000000";e=(n+Number(t[1])).slice(-n.length)}sorting.push(e+", "+$(this).index())}),sorting=thIndex!=curThIndex||1==thInc?sorting.sort():sorting.sort(function(t,e){return e.localeCompare(t)}),thInc=thIndex==curThIndex?1-thInc:0,curThIndex=thIndex,sortIt()})});`;
+
+      res.writeHead(200, {'Content-type':'text/html'});
 			res.write(`
 <html lang="en"><head>
 	<title>XNP v${PROXY_VERSION} Hashrate Monitor</title>
 	<meta charset="utf-8">
-	<meta http-equiv="refresh" content="15">
+  <meta name="mobile-web-app-capable" content="yes">
+  <link rel="icon" sizes="192x192" href="${icon}">
+	<link rel="shortcut icon" href="${icon}">
 	<style>
-	  html, body {
-	    font-family: 'Saira Semi Condensed', sans-serif;
-	    font-size: 14px;
-	    text-align: center;
-	  }
-	
-	  .sorted-table {
-	    margin: auto;
-	    width: 60%;
-	    text-align: center;
-	  }
-	
-	  .sorted-table td, .sorted-table th {
-	    border-bottom: 1px solid #d9d9d9;
-	  }
-	
-	  .hover {
-	    background-color: #eeeeee;
-	    cursor: pointer;
-	  }
+    ${stylesheet}
 	</style>
-</head><body>
-	<h1>XNP v${PROXY_VERSION} Hashrate Monitor</h1>
-	<h2>Workers: ${totalWorkers}, Hashrate: ${totalHashrate}</h2>
-	${tablePool}
-	<table class="sorted-table">
-		<thead>
-			<th><TAB INDENT=0  ID=t1>Name</th>
-			<th><TAB INDENT=60 ID=t2>Hashrate</th>
-			<th><TAB INDENT=80 ID=t3>Difficulty</th>
-			<th><TAB INDENT=100 ID=t4>Shares</th>
-			<th><TAB INDENT=120 ID=t5>Hashes</th>
-			<th><TAB INDENT=140 ID=t6>Share Ago</th>
-			<th><TAB INDENT=180 ID=t7>Ping Ago</th>
-			<th><TAB INDENT=220 ID=t8>Connected Ago</th>
-			<th><TAB INDENT=260 ID=t9>Pool</th>
-			<th><TAB INDENT=320 ID=t10>Agent</th>
-		</thead>
-		<tbody>
-			${tableBody}
-		</tbody>
-	</table>
+</head><body class="${global.config.theme}">
+    <div title="Toggle theme..."  onclick="theme(body)"><h1 class="header" unselectable="on" onselectstart="return false;" onmousedown="return false;">XNP v${PROXY_VERSION} Hashrate Monitor</h1></div>
+    <div id="content">
+    	<h2>Workers: ${totalWorkers}, Hashrate: ${totalHashrate}</h2>
+    	${tablePool}
+    	<table class="sorted-table">
+    		<thead>
+    			<th><TAB INDENT=0  ID=t1>Name</th>
+    			<th><TAB INDENT=60 ID=t2>Hashrate</th>
+    			<th><TAB INDENT=80 ID=t3>Difficulty</th>
+    			<th><TAB INDENT=100 ID=t4>Shares</th>
+    			<th><TAB INDENT=120 ID=t5>Hashes</th>
+    			<th><TAB INDENT=140 ID=t6>Share Recvd</th>
+    			<th><TAB INDENT=180 ID=t7>Ping Recvd</th>
+    			<th><TAB INDENT=220 ID=t8>Connected</th>
+    			<th><TAB INDENT=260 ID=t9>Pool</th>
+    			<th><TAB INDENT=320 ID=t10>Agent</th>
+    		</thead>
+    		<tbody>
+    			${tableBody}
+    		</tbody>
+    	</table>
+  </div>
 	<script src='http://cdnjs.cloudflare.com/ajax/libs/jquery/2.1.3/jquery.min.js'></script>
 	<script>
-	    $('table.sorted-table thead th').on("mouseover", function() {
-	      var el = $(this),
-	      pos = el.index();
-	      el.addClass("hover");
-	      $('table.sorted-table > tbody > tr > td').filter(":nth-child(" + (pos+1) + ")").addClass("hover");
-	    }).on("mouseout", function() {
-	      $("td, th").removeClass("hover");
-	    });
-	
-	    var thIndex = 0, thInc = 1, curThIndex = null;
-	
-	    $(function() {
-	      $('table.sorted-table thead th').click(function() {
-	        thIndex = $(this).index();
-	        sorting = [];
-	        tbodyHtml = null;
-	        $('table.sorted-table > tbody > tr').each(function() {
-	          var str = $(this).children('td').eq(thIndex).html();
-	          var re1 = /^<.+>(\\d+)<\\/.+>$/;
-	          var m;
-	          if (m = re1.exec(str)) {
-	            var pad = "000000000000";
-	            str = (pad + Number(m[1])).slice(-pad.length);
-	          }
-	          sorting.push(str + ', ' + $(this).index());
-	        });
-
-	        if (thIndex != curThIndex || thInc == 1) {
-	          sorting = sorting.sort();
-        	} else {
-	          sorting = sorting.sort(function(a, b){return b.localeCompare(a)});
-	        }
-	
-	        if (thIndex == curThIndex) {
-	          thInc = 1 - thInc;
-	        } else {
-	          thInc = 0;
-	        }
-	        
-	        curThIndex = thIndex;
-	        sortIt();
-	      });
-	    })
-
-	    function sortIt() {
-	      for (var sortingIndex = 0; sortingIndex < sorting.length; sortingIndex++) {
-	        rowId = parseInt(sorting[sortingIndex].split(', ')[1]);
-	        tbodyHtml = tbodyHtml + $('table.sorted-table > tbody > tr').eq(rowId)[0].outerHTML;
-	      }
-	      $('table.sorted-table > tbody').html(tbodyHtml);
-	    }
+	    ${helpers}
+  </script>
+  <script>
+        window.setInterval(function(){
+            $( "#content" ).load( "/ #content", function() {
+                ${helpers}
+              });
+            }, ${global.config.refreshTime} * 1000);
 	</script>
 </body></html>
 `);
@@ -1484,7 +1555,7 @@ if (cluster.isMaster) {
     connectPools();
     setInterval(enumerateWorkerStats, 15*1000);
     setInterval(balanceWorkers, 90*1000);
-    if (global.config.httpEnable) { 
+    if (global.config.httpEnable) {
         console.log("Activating Web API server on " + (global.config.httpAddress || "localhost") + ":" + (global.config.httpPort || "8181"));
         activateHTTP();
     }
