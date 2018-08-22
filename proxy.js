@@ -836,6 +836,7 @@ function handleNewBlockTemplate(blockTemplate, hostname){
     if (!blockTemplate.algo) blockTemplate.algo = pool.algo;
     if (!blockTemplate.blob_type) blockTemplate.blob_type = pool.blob_type;
     pool.activeBlocktemplate = new pool.coinFuncs.MasterBlockTemplate(blockTemplate);
+	activePools[hostname].activeBlocktemplate = pool.activeBlocktemplate;
     for (let id in cluster.workers){
         if (cluster.workers.hasOwnProperty(id)){
             cluster.workers[id].send({
