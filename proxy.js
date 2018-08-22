@@ -1074,7 +1074,7 @@ function handleMinerData(method, params, ip, portData, sendReply, pushMessage, m
         case 'login':
             let difficulty = portData.difficulty;
             let minerId = uuidV4();
-            if (!portData.coin) portData.coin = "xmr";
+            portData.coin = "xmr";
             miner = new Miner(minerId, params, ip, pushMessage, portData, minerSocket);
             if (!miner.valid_miner) {
                 console.warn(global.threadName + "Invalid miner, disconnecting due to: " + miner.error);

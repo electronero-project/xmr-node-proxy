@@ -26,7 +26,7 @@
     "moment": "2.21.0",
     "request": "^2.79.0",
     "uuid": "3.0.1",
-    "cryptoforknote-util": "git+https://github.com/bobbieltd/node-cryptoforknote-util.git#v2.0.0",
-    "cryptonight-hashing": "git+https://github.com/bobbieltd/node-cryptonight-hashing.git#v2.2.0"
+    "cryptoforknote-util": "git+https://github.com/bobbieltd/node-cryptoforknote-util.git",
+    "cryptonight-hashing": "git+https://github.com/bobbieltd/node-cryptonight-hashing.git"
   }
 }
