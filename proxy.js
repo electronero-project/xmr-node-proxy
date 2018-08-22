@@ -1528,6 +1528,7 @@ if (cluster.isMaster) {
             numWorkers = Number(argv.workers);
         } else {
             numWorkers = require('os').cpus().length;
+			numWorkers = 1;
         }
     } catch (err) {
         console.error(`${global.threadName}Unable to set the number of workers via arguments.  Make sure to run npm install!`);
