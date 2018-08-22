@@ -913,7 +913,7 @@ function Miner(id, params, ip, pushMessage, portData, minerSocket) {
             }
         }
     }
-    if (!this.pool) this.pool = defaultPools[portData.coin];
+    if (!this.pool || !activePools[this.pool]) this.pool = defaultPools[portData.coin];
 
     if (diffSplit.length === 2) {
         this.fixed_diff = true;
@@ -923,7 +923,7 @@ function Miner(id, params, ip, pushMessage, portData, minerSocket) {
         this.error = "Too many options in the login field";
         this.valid_miner = false;
     }
-    console.log(this.pool + activePools[this.pool]);
+    console.log(defaultPools[portData.coin]+this.pool + activePools[this.pool]);
     if (activePools[this.pool].activeBlocktemplate === null){
         this.error = "No active block template";
         this.valid_miner = false;
