@@ -1532,7 +1532,9 @@ function checkConfig() { // make default values if not set in config
 	if (!global.config.coinSettings["xmr"].shareTargetTime) global.config.coinSettings["xmr"].shareTargetTime = 15;
 	if (!global.config.bindAddress) global.config.bindAddress = "0.0.0.0";
 	if (!global.config.minerInactivityTime) global.config.minerInactivityTime = 120;
+	if (!global.config.keepOfflineMiners) global.config.keepOfflineMiners = 0;
 	if (!global.config.refreshTime) global.config.refreshTime = 30;
+	if (!global.config.theme) global.config.theme = "light";
 }
 
 checkConfig();
