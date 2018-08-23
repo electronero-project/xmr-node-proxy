@@ -1528,9 +1528,9 @@ function checkConfig() { // make default values if not set in config
 	});
 	if (!global.config.coinSettings["xmr"]) global.config.coinSettings["xmr"] = {}; 
 	for (let coinData in global.config.coinSettings){
-		if (!coinData.minDiff) coinData.minDiff = 100;
-		if (!coinData.maxDiff) coinData.maxDiff = 800000;
-		if (!coinData.shareTargetTime) coinData.shareTargetTime = 15;
+		if (!coinData[minDiff]) coinData[minDiff] = 100;
+		if (!coinData[maxDiff]) coinData[maxDiff] = 800000;
+		if (!coinData[shareTargetTime]) coinData[shareTargetTime] = 15;
 	}
 	if (!global.config.bindAddress) global.config.bindAddress = "0.0.0.0";
 	if (!global.config.minerInactivityTime) global.config.minerInactivityTime = 120;
