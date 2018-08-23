@@ -879,10 +879,6 @@ function Miner(id, params, ip, pushMessage, portData, minerSocket) {
     this.coin = portData.coin;
     this.coinFuncs = require(`./lib/${this.coin}.js`)();
     this.coinSettings = global.config.coinSettings[this.coin];
-	if (!this.coinSettings) this.coinSettings = {}; 
-	if (!this.coinSettings.minDiff) this.coinSettings.minDiff = 100;
-	if (!this.coinSettings.maxDiff) this.coinSettings.maxDiff = 800000;
-	if (!this.coinSettings.shareTargetTime) this.coinSettings.shareTargetTime = 15;
     this.login = params.login;  // Documentation purposes only.
     this.user = params.login;  // For accessControl and workerStats.
     this.password = params.pass;  // For accessControl and workerStats.
@@ -1522,6 +1518,24 @@ function checkActivePools() {
 // API Calls
 
 // System Init
+function checkConfig() { // make default values if not set in config
+//	console.log("Blob type guide : XMR forks --> blob_type is cryptonote, Forknote/Bytecoin forks --> blob_type is forknote2");
+	if (global.config.pools.length == 0) console.log("Please put at least one pool");
+	global.config.pools.forEach(function(poolData){
+		poolData.coin = "xmr";
+		if (!poolData.algo) poolData.algo = "cryptonight/1";
+		if (!poolData.blob_type) poolData.blob_type = "cryptonote";
+	}
+	if (!global.config.coinSettings["xmr"]) global.config.coinSettings["xmr"] = {}; 
+	global.config.coinSettings.forEach(function(coinData){
+		if (!coinData.minDiff) coinData.minDiff = 100;
+		if (!coinData.maxDiff) coinData.maxDiff = 800000;
+		if (!coinData.shareTargetTime) coinData.shareTargetTime = 15;
+	}
+	if (!global.config.bindAddress) global.config.bindAddress = "0.0.0.0";
+	if (!global.config.minerInactivityTime) global.config.minerInactivityTime = 120;
+	if (!global.config.refreshTime) global.config.refreshTime = 30;
+}
 
 if (cluster.isMaster) {
     console.log("Xmr-Node-Proxy (XNP) v" + PROXY_VERSION);
@@ -1570,7 +1584,6 @@ if (cluster.isMaster) {
     */
     process.on('message', slaveMessageHandler);
     global.config.pools.forEach(function(poolData){
-        if (!poolData.coin) poolData.coin = "xmr";
         activePools[poolData.hostname] = new Pool(poolData);
         if (poolData.default){
             defaultPools[poolData.coin] = poolData.hostname;
