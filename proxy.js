@@ -1539,6 +1539,7 @@ function checkConfig() { // make default values if not set in config
 
 if (cluster.isMaster) {
     console.log("Xmr-Node-Proxy (XNP) v" + PROXY_VERSION);
+	checkConfig();
     let numWorkers;
     try {
         let argv = require('minimist')(process.argv.slice(2));
