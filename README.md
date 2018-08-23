@@ -8,16 +8,19 @@ It is advisable to fresh install. For http access, it's view-only but you can st
 - ~/xmr-node-proxy/update.sh or ./update.sh
 
 ## Feature
-- General coin by POW algorithm ("coin" : "cryptonightv7" , "coin" : "cryptonight", "coin" : "forknote", ...)  
 - Http access (http://yourIP:8181)
 - Failover pools
 
-## Special algo cases : 
-- Turtlecoin --> "coin" : "trtl";
-- Bittube --> "coin" : "tube";
-- Masari --> "coin" : "msr";
-- Stellite --> "coin" : "xtl";
-- Haven --> "coin" : "xhv";
+## "algo" values : 
+cryptonight/ (0, 1, xtl, msr, rto)
+cryptonight-light/ (0, 1)
+cryptonight-heavy/ (0, xhv, tube)
+
+## "blob_type" values :
+- cryptonote - Monero forks like Sumokoin, Electroneum, Graft, Aeon, Intense, Tube, Ryo
+- cryptonote2 - Masari
+- forknote - Some old Bytecoin forks (do not even know which one)
+- forknote2 - Bytecoin/Forknote forks like Turtlecoin, Karbowanec
 
 ## HTTP monitoring by browser
 - In config.json
@@ -153,11 +156,11 @@ Please contact Snipa at: proxy_installs@snipanet.com or via IRC on irc.freenode.
 * [etn.semiPOOL.com](https://etn.semipool.com)
 * [aeon.semiPOOL.com](https://aeon.semipool.com)
 * [grft.semiPOOL.com](https://grft.semipool.com)
-* [dero.semiPOOL.com](https://dero.semipool.com)
+* [tube.semiPOOL.com](https://tube.semipool.com)
 * [sumo.semiPOOL.com](https://sumo.semipool.com)
 * [krb.semiPOOL.com](https://krb.semipool.com)
 * [trtl.semiPOOL.com](https://trtl.semipool.com)
-* [ipbc.semiPOOL.com](https://ipbc.semipool.com)
+* [lok.semiPOOL.com](https://lok.semipool.com)
 * [itnspool.net](https://itnspool.net)
 
 If you'd like to have your pool added, please make a pull request here, or contact Snipa on IRC!
