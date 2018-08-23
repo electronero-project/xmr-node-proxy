@@ -1527,7 +1527,7 @@ function checkConfig() { // make default values if not set in config
 		if (!poolData.blob_type) poolData.blob_type = "cryptonote";
 	});
 	if (!global.config.coinSettings["xmr"]) global.config.coinSettings["xmr"] = {}; 
-	global.config.coinSettings.forEach(function(coinData){
+	for (let coinData in global.config.coinSettings){
 		if (!coinData.minDiff) coinData.minDiff = 100;
 		if (!coinData.maxDiff) coinData.maxDiff = 800000;
 		if (!coinData.shareTargetTime) coinData.shareTargetTime = 15;
