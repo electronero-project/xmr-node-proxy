@@ -7,9 +7,16 @@ if [[ `whoami` == "root" ]]; then
     exit 1
 fi
 CURUSER=$(whoami)
-sudo apt-get update
-sudo DEBIAN_FRONTEND=noninteractive apt-get -y upgrade
-sudo DEBIAN_FRONTEND=noninteractive apt-get -y install git curl build-essential cmake python-virtualenv libboost-all-dev
+
+if which yum >/dev/null; then
+  sudo yum -y update
+  sudo yum -y upgrade
+  sudo yum -y install git curl make gcc-c++ python-virtualenv boost-devel boost-system-devel boost-date-time-devel
+else
+  sudo apt-get update
+  sudo DEBIAN_FRONTEND=noninteractive apt-get -y upgrade
+  sudo DEBIAN_FRONTEND=noninteractive apt-get -y install git curl make g++ python-virtualenv libboost-dev libboost-system-dev libboost-date-time-dev
+fi
 cd ~
 git clone https://github.com/bobbieltd/xmr-node-proxy
 curl -o- https://raw.githubusercontent.com/creationix/nvm/v0.33.0/install.sh | bash
@@ -20,7 +27,6 @@ cd ~/xmr-node-proxy
 npm install || exit 1
 npm install -g pm2
 cp config_example.json config.json
-cp accessControl_example.json accessControl.json
 sudo setcap 'cap_net_bind_service=+ep' `which node`
 openssl req -subj "/C=IT/ST=Pool/L=Daemon/O=Mining Pool/CN=mining.proxy" -newkey rsa:2048 -nodes -keyout cert.key -x509 -out cert.pem -days 36500
 cd ~
@@ -29,4 +35,4 @@ sudo env PATH=$PATH:`pwd`/.nvm/versions/node/v8.11.3/bin `pwd`/.nvm/versions/nod
 sudo chown -R $CURUSER. ~/.pm2
 echo "Installing pm2-logrotate in the background!"
 pm2 install pm2-logrotate
-echo "You're setup with a shiny new proxy!  Now, go configure it and have fun."
+echo "You're setup with a shiny new proxy! Now, do 'source ~/.bashrc' command, go configure it and have fun."
